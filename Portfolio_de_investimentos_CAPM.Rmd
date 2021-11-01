@@ -1,0 +1,132 @@
+---
+title: "Criando um portfólio de ações com o CAPM"
+author: "Vanderlei Kleinschmidt"
+date: "01/11/2021"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introdução
+
+Este projeto tem por objetivo construir um portfólio de ações da bolsa brasileira, utilizando como base teórica o CAPM - Capital Asset Pricing Model.
+
+Para desenvolver esse exercício, estou usando o pacote Tidyquant, disponível em:
+
+<https://cran.r-project.org/web/packages/tidyquant/vignettes/TQ05-performance-analysis-with-tidyquant.html>
+
+```{r}
+setwd("C:/Users/vande/OneDrive/Documentos/R/basico")
+getwd()
+```
+
+## Construindo um portfólio de investimentos com o modelo CAPM, com dados outubro/2021
+
+## Habilitando os pacotes
+
+```{r}
+library(tidyquant)
+library(PerformanceAnalytics)
+library(tidyverse)
+```
+
+## Construindo os vetores dos papeis e seus respectivos pesos
+```{r}
+acoes_v <- c("M1RN34.SA", "NVDC34.SA", "TSLA34.SA", "NFLX34.SA", "MSFT34.SA", "NIKE34.SA", "ADBE34.SA", "GOGL34.SA", "HOME34.SA", "PFIZ34.SA", "AAPL34.SA", "IVVB11.SA", "SPXI11.SA", "PARD3.SA", "ABEV3.SA", "MDIA3.SA", "COCA34.SA", "BOVA11.SA", "AMER3.SA", "VALE3.SA")
+vetor_peso <- c(0.16, 0.13, 0.12, 0.07, 0.06, 0.06, 0.05, 0.05, 0.04, 0.04, 0.03, 0.03, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02)
+sum(vetor_peso)
+
+acoes_df <- tq_get(c(acoes_v),
+       get = "stock.prices",
+       from = "2021-10-01",
+       to = "2021-10-31") %>%
+       group_by(symbol)
+       
+head(acoes_df)
+```
+
+## Calculando o retorno diário
+```{r}
+ret_acoes <- acoes_df %>%
+  tq_transmute(select = adjusted,
+               mutate_fun = periodReturn,
+               period = 'daily',
+               col_rename = 'ret')
+ret_acoes
+```
+## Juntar a série de retornos ao portfólio
+```{r}
+retornos_diarios_portfolio <- ret_acoes %>%
+  tq_portfolio(assets_col = symbol,
+               returns_col = ret,
+               weights = vetor_peso,
+               col_rename = "Ra")
+
+retornos_diarios_portfolio
+```
+
+## Comparar o retorno com o benchmark (Ibovespa)
+```{r}
+tq_get("^BVSP")
+
+ibov_df <- tq_get(c("^BVSP"),
+                  get = "stock.prices", 
+                  from = "2021-10-01",
+                  to = "2021-10-31") %>%
+                  group_by(symbol)
+
+ibov_df
+
+ret_ibov <- ibov_df %>%
+  tq_transmute(select = adjusted,
+               mutate_fun = periodReturn,
+               period = 'daily',
+               col_rename = 'Rm')
+
+ret_ibov
+
+retornos_diarios_ibov <- ret_ibov[,-1]
+retornos_diarios_ibov
+```
+
+## Calculando a performance
+```{r}
+df_portfolio_perf <- left_join(retornos_diarios_portfolio, 
+                               retornos_diarios_ibov,
+                               by = "date")
+
+df_portfolio_perf
+```
+## Obtendo o CAPM
+```{r}
+capm <- tq_performance(df_portfolio_perf, Ra, Rm, performance_fun = table.CAPM)
+View(capm)
+```
+
+## Obtendo o índice de Sharpe do portfólio
+```{r}
+tq_performance(df_portfolio_perf, Ra = Ra, Rb = NULL, performance_fun = SharpeRatio)
+```
+## Retorno anualizado do portfólio
+```{r}
+teste <- df_portfolio_perf[-1,]
+tq_performance(teste, Ra = Ra, Rb = NULL, performance_fun = table.AnnualizedReturns)
+```
+## Evolução do patrimônio supondo patrimônio inicial de R$ 100.000,00
+```{r}
+retorno_port <- ret_acoes %>%
+  tq_portfolio(assets_col = symbol,
+               returns_col = ret,
+               weights = vetor_peso,
+               col_rename = "crescimento.portfolio",
+               wealth.index = TRUE) %>%
+  mutate(crescimento.portfolio * 100000)
+
+ggplot(data = retorno_port, aes(x = date, y = crescimento.portfolio)) + 
+  geom_line(size = 1) +
+  labs(title = "Evolução de R$ 100.000 investidos no portfólio com o tempo",
+       caption = "Dados do Yahoo Finance",
+       x = "", y = "PL")
+```
